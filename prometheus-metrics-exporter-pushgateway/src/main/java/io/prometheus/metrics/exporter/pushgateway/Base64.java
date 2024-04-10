@@ -5,7 +5,7 @@ import javax.xml.bind.DatatypeConverter;
 /**
  * This class delegates to either javax.xml.bind.DatatypeConverter (for Java &lt; 8) or java.util.Base64 (Java 8+)
  * to perform Base64 encoding of a String.
- *
+ * <p>
  * This code requires Java 8+ for compilation.
  */
 public class Base64 {
@@ -23,11 +23,12 @@ public class Base64 {
         }
     }
 
-    private Base64() {}
+    private Base64() {
+    }
 
     /**
      * Encodes a byte[] to a String using Base64.
-     *
+     * <p>
      * Passing a null argument will cause a NullPointerException to be thrown.
      *
      * @param src string to be encoded
