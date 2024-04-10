@@ -1,11 +1,6 @@
-package io.prometheus.client.exporter;
+package io.prometheus.metrics.exporter.pushgateway;
 
-import java.io.BufferedWriter;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStreamWriter;
-import java.io.UnsupportedEncodingException;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
@@ -16,24 +11,24 @@ import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Map;
 
-import io.prometheus.client.Collector;
-import io.prometheus.client.CollectorRegistry;
-import io.prometheus.client.exporter.common.TextFormat;
+import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
+import io.prometheus.metrics.model.registry.Collector;
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
 
 /**
  * Export metrics via the Prometheus Pushgateway.
  * <p>
  * The Prometheus Pushgateway exists to allow ephemeral and batch jobs to expose their metrics to Prometheus.
  * Since these kinds of jobs may not exist long enough to be scraped, they can instead push their metrics
- * to a Pushgateway. This class allows pushing the contents of a {@link CollectorRegistry} to
+ * to a Pushgateway. This class allows pushing the contents of a {@link PrometheusRegistry} to
  * a Pushgateway.
  * <p>
  * Example usage:
  * <pre>
  * {@code
  *   void executeBatchJob() throws Exception {
- *     CollectorRegistry registry = new CollectorRegistry();
- *     Gauge duration = Gauge.build()
+ *     PrometheusRegistry registry = new PrometheusRegistry();
+ *     Gauge duration = Gauge.builder()
  *         .name("my_batch_job_duration_seconds").help("Duration of my batch job in seconds.").register(registry);
  *     Gauge.Timer durationTimer = duration.startTimer();
  *     try {
@@ -41,7 +36,7 @@ import io.prometheus.client.exporter.common.TextFormat;
  *
  *       // This is only added to the registry after success,
  *       // so that a previous success in the Pushgateway isn't overwritten on failure.
- *       Gauge lastSuccess = Gauge.build()
+ *       Gauge lastSuccess = Gauge.builder()
  *           .name("my_batch_job_last_success").help("Last time my batch job succeeded, in unixtime.").register(registry);
  *       lastSuccess.setToCurrentTime();
  *     } finally {
@@ -108,7 +103,7 @@ public class PushGateway {
    * <p>
    * This uses the PUT HTTP method.
   */
-  public void push(CollectorRegistry registry, String job) throws IOException {
+  public void push(PrometheusRegistry registry, String job) throws IOException {
     doRequest(registry, job, null, "PUT");
   }
 
@@ -120,8 +115,8 @@ public class PushGateway {
    * This uses the PUT HTTP method.
   */
   public void push(Collector collector, String job) throws IOException {
-    CollectorRegistry registry = new CollectorRegistry();
-    collector.register(registry);
+    PrometheusRegistry registry = new PrometheusRegistry();
+    registry.register(collector);
     push(registry, job);
   }
 
@@ -130,7 +125,7 @@ public class PushGateway {
    * <p>
    * This uses the PUT HTTP method.
   */
-  public void push(CollectorRegistry registry, String job, Map<String, String> groupingKey) throws IOException {
+  public void push(PrometheusRegistry registry, String job, Map<String, String> groupingKey) throws IOException {
     doRequest(registry, job, groupingKey, "PUT");
   }
 
@@ -142,8 +137,8 @@ public class PushGateway {
    * This uses the PUT HTTP method.
   */
   public void push(Collector collector, String job, Map<String, String> groupingKey) throws IOException {
-    CollectorRegistry registry = new CollectorRegistry();
-    collector.register(registry);
+    PrometheusRegistry registry = new PrometheusRegistry();
+    registry.register(collector);
     push(registry, job, groupingKey);
   }
 
@@ -152,7 +147,7 @@ public class PushGateway {
    * <p>
    * This uses the POST HTTP method.
   */
-  public void pushAdd(CollectorRegistry registry, String job) throws IOException {
+  public void pushAdd(PrometheusRegistry registry, String job) throws IOException {
     doRequest(registry, job, null, "POST");
   }
 
@@ -164,8 +159,8 @@ public class PushGateway {
    * This uses the POST HTTP method.
   */
   public void pushAdd(Collector collector, String job) throws IOException {
-    CollectorRegistry registry = new CollectorRegistry();
-    collector.register(registry);
+    PrometheusRegistry registry = new PrometheusRegistry();
+    registry.register(collector);
     pushAdd(registry, job);
   }
 
@@ -174,7 +169,7 @@ public class PushGateway {
    * <p>
    * This uses the POST HTTP method.
   */
-  public void pushAdd(CollectorRegistry registry, String job, Map<String, String> groupingKey) throws IOException {
+  public void pushAdd(PrometheusRegistry registry, String job, Map<String, String> groupingKey) throws IOException {
     doRequest(registry, job, groupingKey, "POST");
   }
 
@@ -186,8 +181,8 @@ public class PushGateway {
    * This uses the POST HTTP method.
   */
   public void pushAdd(Collector collector, String job, Map<String, String> groupingKey) throws IOException {
-    CollectorRegistry registry = new CollectorRegistry();
-    collector.register(registry);
+    PrometheusRegistry registry = new PrometheusRegistry();
+    registry.register(collector);
     pushAdd(registry, job, groupingKey);
   }
 
@@ -212,7 +207,7 @@ public class PushGateway {
     doRequest(null, job, groupingKey, "DELETE");
   }
 
-  void doRequest(CollectorRegistry registry, String job, Map<String, String> groupingKey, String method) throws IOException {
+  void doRequest(PrometheusRegistry registry, String job, Map<String, String> groupingKey, String method) throws IOException {
     String url = gatewayBaseURL;
     if (job.contains("/")) {
       url += "job@base64/" + base64url(job);
@@ -232,7 +227,7 @@ public class PushGateway {
       }
     }
     HttpURLConnection connection = connectionFactory.create(url);
-    connection.setRequestProperty("Content-Type", TextFormat.CONTENT_TYPE_004);
+    connection.setRequestProperty("Content-Type", PrometheusTextFormatWriter.CONTENT_TYPE);
     if (!method.equals("DELETE")) {
       connection.setDoOutput(true);
     }
@@ -244,10 +239,10 @@ public class PushGateway {
 
     try {
       if (!method.equals("DELETE")) {
-        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), "UTF-8"));
-        TextFormat.write004(writer, registry.metricFamilySamples());
-        writer.flush();
-        writer.close();
+        OutputStream outputStream = connection.getOutputStream();
+        new PrometheusTextFormatWriter(false).write(outputStream, registry.scrape());
+        outputStream.flush();
+        outputStream.close();
       }
 
       int response = connection.getResponseCode();

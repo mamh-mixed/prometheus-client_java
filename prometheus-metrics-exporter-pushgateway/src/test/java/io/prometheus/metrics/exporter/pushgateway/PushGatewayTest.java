@@ -1,15 +1,16 @@
-package io.prometheus.client.exporter;
+package io.prometheus.metrics.exporter.pushgateway;
 
 
 import static org.junit.rules.ExpectedException.none;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
-import io.prometheus.client.CollectorRegistry;
-import io.prometheus.client.Gauge;
 import java.io.IOException;
 import java.util.TreeMap;
 import java.util.Map;
+
+import io.prometheus.metrics.core.metrics.Gauge;
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -28,15 +29,15 @@ public class PushGatewayTest {
   public MockServerRule mockServerRule = new MockServerRule(this);
   private MockServerClient mockServerClient;
 
-  CollectorRegistry registry;
+  PrometheusRegistry registry;
   Gauge gauge;
   PushGateway pg;
   Map groupingKey;
 
   @Before
   public void setUp() {
-    registry = new CollectorRegistry();
-    gauge = (Gauge) Gauge.build().name("g").help("help").create();
+    registry = new PrometheusRegistry();
+    gauge = (Gauge) Gauge.builder().name("g").help("help").build();
     pg = new PushGateway("localhost:" + mockServerRule.getPort());
     groupingKey = new TreeMap<String, String>();
     groupingKey.put("l", "v");

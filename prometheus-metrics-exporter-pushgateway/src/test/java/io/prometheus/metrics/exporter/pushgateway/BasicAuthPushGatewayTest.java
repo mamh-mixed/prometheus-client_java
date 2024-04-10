@@ -1,4 +1,4 @@
-package io.prometheus.client.exporter;
+package io.prometheus.metrics.exporter.pushgateway;
 
 
 import static org.mockserver.model.HttpRequest.request;
@@ -6,8 +6,8 @@ import static org.mockserver.model.HttpResponse.response;
 
 import java.io.IOException;
 
-import io.prometheus.client.CollectorRegistry;
-import io.prometheus.client.Gauge;
+import io.prometheus.metrics.core.metrics.Gauge;
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -20,14 +20,14 @@ public class BasicAuthPushGatewayTest {
   public MockServerRule mockServerRule = new MockServerRule(this);
   private MockServerClient mockServerClient;
 
-  CollectorRegistry registry;
+  PrometheusRegistry registry;
   Gauge gauge;
   PushGateway pushGateway;
 
   @Before
   public void setUp() {
-    registry = new CollectorRegistry();
-    gauge = Gauge.build().name("g").help("help").create();
+    registry = new PrometheusRegistry();
+    gauge = Gauge.builder().name("g").help("help").build();
     pushGateway = new PushGateway("localhost:" + mockServerRule.getPort());
     pushGateway.setConnectionFactory(new BasicAuthHttpConnectionFactory("testUser", "testPwd"));
   }
