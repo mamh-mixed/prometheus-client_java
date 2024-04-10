@@ -1,8 +1,9 @@
 package io.prometheus.metrics.exporter.pushgateway;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 public class BasicAuthHttpConnectionFactory implements HttpConnectionFactory {
     private final HttpConnectionFactory originConnectionFactory;
@@ -25,12 +26,8 @@ public class BasicAuthHttpConnectionFactory implements HttpConnectionFactory {
     }
 
     private String encode(String user, String password) {
-        try {
-            byte[] credentialsBytes = (user + ":" + password).getBytes("UTF-8");
-            String encoded = Base64.encodeToString(credentialsBytes);
-            return String.format("Basic %s", encoded);
-        } catch (UnsupportedEncodingException e) {
-            throw new IllegalArgumentException(e);
-        }
+        byte[] credentialsBytes = (user + ":" + password).getBytes(StandardCharsets.UTF_8);
+        String encoded = Base64.getEncoder().encodeToString(credentialsBytes);
+        return String.format("Basic %s", encoded);
     }
 }

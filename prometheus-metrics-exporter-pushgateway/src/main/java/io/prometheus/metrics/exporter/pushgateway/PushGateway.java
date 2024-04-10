@@ -6,6 +6,8 @@ import io.prometheus.metrics.model.registry.PrometheusRegistry;
 
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -259,12 +261,7 @@ public class PushGateway {
     }
 
     private static String base64url(String v) {
-        // Per RFC4648 table 2. We support Java 6, and java.util.Base64 was only added in Java 8,
-        try {
-            return Base64.encodeToString(v.getBytes("UTF-8")).replace("+", "-").replace("/", "_");
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException(e);  // Unreachable.
-        }
+        return  Base64.getEncoder().encodeToString(v.getBytes(StandardCharsets.UTF_8)).replace("+", "-").replace("/", "_");
     }
 
     /**
