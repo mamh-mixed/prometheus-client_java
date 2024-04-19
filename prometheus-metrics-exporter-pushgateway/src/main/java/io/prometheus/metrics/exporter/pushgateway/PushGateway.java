@@ -1,5 +1,6 @@
 package io.prometheus.metrics.exporter.pushgateway;
 
+import io.prometheus.metrics.config.PrometheusProperties;
 import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
 import io.prometheus.metrics.model.registry.Collector;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
@@ -284,5 +285,24 @@ public class PushGateway {
             result.write(buffer, 0, length);
         }
         return result.toString("UTF-8");
+    }
+
+    public static Builder builder() {
+        return builder(PrometheusProperties.get());
+    }
+
+    public static Builder builder(PrometheusProperties config) {
+        return new Builder(config);
+    }
+
+    public static class Builder {
+        private final PrometheusProperties config;
+        private Builder(PrometheusProperties config) {
+            this.config = config;
+        }
+
+        public PushGateway build() {
+            return new PushGateway(config.getExporterPushgatewayProperties().getAddress());
+        }
     }
 }
