@@ -1,10 +1,11 @@
 package io.prometheus.metrics.config;
 
+import java.text.Format;
 import java.util.Map;
 
 public class ExporterPushgatewayProperties {
     private static final String ADDRESS = "address";
-    private final String address;
+    private String address;
 
     private ExporterPushgatewayProperties(String address) {
         this.address = address == null ? "localhost:9091" : address;

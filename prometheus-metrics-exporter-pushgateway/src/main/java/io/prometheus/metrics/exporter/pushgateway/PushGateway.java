@@ -1,11 +1,16 @@
 package io.prometheus.metrics.exporter.pushgateway;
 
+import io.prometheus.metrics.config.ExporterPushgatewayProperties;
 import io.prometheus.metrics.config.PrometheusProperties;
+import io.prometheus.metrics.config.PrometheusPropertiesException;
 import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
 import io.prometheus.metrics.model.registry.Collector;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -53,48 +58,17 @@ public class PushGateway {
 
     // Visible for testing.
     protected final String gatewayBaseURL;
+    private final Format format;
 
     private HttpConnectionFactory connectionFactory = new DefaultHttpConnectionFactory();
 
-    /**
-     * Construct a Pushgateway, with the given address.
-     * <p>
-     *
-     * @param address host:port or ip:port of the Pushgateway.
-     */
-    public PushGateway(String address) {
-        this(createURLSneakily("http://" + address));
-    }
-
-    /**
-     * Construct a Pushgateway, with the given URL.
-     * <p>
-     *
-     * @param serverBaseURL the base URL and optional context path of the Pushgateway server.
-     */
-    public PushGateway(URL serverBaseURL) {
-        this.gatewayBaseURL = URI.create(serverBaseURL.toString() + "/metrics/")
-                .normalize()
-                .toString();
+    private PushGateway(String gatewayBaseURL, Format format) {
+        this.gatewayBaseURL = gatewayBaseURL;
+        this.format = format;
     }
 
     public void setConnectionFactory(HttpConnectionFactory connectionFactory) {
         this.connectionFactory = connectionFactory;
-    }
-
-    /**
-     * Creates a URL instance from a String representation of a URL without throwing a checked exception.
-     * Required because you can't wrap a call to another constructor in a try statement.
-     *
-     * @param urlString the String representation of the URL.
-     * @return The URL instance.
-     */
-    private static URL createURLSneakily(final String urlString) {
-        try {
-            return new URL(urlString);
-        } catch (MalformedURLException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     /**
@@ -262,7 +236,7 @@ public class PushGateway {
     }
 
     private static String base64url(String v) {
-        return  Base64.getEncoder().encodeToString(v.getBytes(StandardCharsets.UTF_8)).replace("+", "-").replace("/", "_");
+        return Base64.getEncoder().encodeToString(v.getBytes(StandardCharsets.UTF_8)).replace("+", "-").replace("/", "_");
     }
 
     /**
@@ -297,12 +271,46 @@ public class PushGateway {
 
     public static class Builder {
         private final PrometheusProperties config;
+        private Format format;
+        private String address;
+
         private Builder(PrometheusProperties config) {
             this.config = config;
         }
 
+        public Builder format(Format format) {
+            if (format == null) {
+                throw new NullPointerException();
+            }
+            this.format = format;
+            return this;
+        }
+
+        public Builder address(String address) {
+            this.address = address;
+            return this;
+        }
+
         public PushGateway build() {
-            return new PushGateway(config.getExporterPushgatewayProperties().getAddress());
+            ExporterPushgatewayProperties properties = config == null ? null : config.getExporterPushgatewayProperties();
+            String address = this.address;
+            if (properties != null) {
+                if (address == null && properties.getAddress() != null) {
+                    address = properties.getAddress();
+                }
+            }
+            if (address == null) {
+                address = "localhost:9091";
+            }
+            if (format == null) {
+                format = Format.PROMETHEUS_PROTOBUF;
+            }
+            try {
+                URI baseUrl = URI.create(new URL("http://" + address + "/metrics/").toString()).normalize();
+                return new PushGateway(baseUrl.toString(), format);
+            } catch (MalformedURLException e) {
+                throw new PrometheusPropertiesException(address + ": Invalid address. Expecting <host>:<port>");
+            }
         }
     }
 }

@@ -38,19 +38,19 @@ public class PushGatewayTest {
     public void setUp() {
         registry = new PrometheusRegistry();
         gauge = (Gauge) Gauge.builder().name("g").help("help").build();
-        pg = new PushGateway("localhost:" + mockServerRule.getPort());
+        pg = PushGateway.builder().address("localhost:" + mockServerRule.getPort()).build();
         groupingKey = new TreeMap<String, String>();
         groupingKey.put("l", "v");
     }
 
     @Test(expected = RuntimeException.class)
     public void testInvalidURLThrowsRuntimeException() {
-        new PushGateway("::"); // ":" is interpreted as port number, so parsing fails
+        PushGateway.builder().address("::").build(); // ":" is interpreted as port number, so parsing fails
     }
 
     @Test
     public void testMultipleSlashesAreStrippedFromURL() {
-        final PushGateway pushGateway = new PushGateway("example.com:1234/context///path//");
+        final PushGateway pushGateway = PushGateway.builder().address("example.com:1234/context///path//").build();
         Assert.assertEquals(
                 "http://example.com:1234/context/path/metrics/",
                 pushGateway.gatewayBaseURL
@@ -152,6 +152,7 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job/j/l/v")
         ).respond(response().withStatusCode(202));
+        System.out.println("Pushing to " + pg.gatewayBaseURL);
         pg.push(gauge, "j", groupingKey);
     }
 

@@ -12,7 +12,7 @@ public class ExamplePushGateway {
      * Example of how to use the pushgateway, pass in the host:port of a pushgateway.
      */
     public static void main(String[] args) throws Exception {
-        PushGateway pg = new PushGateway(args[0]);
+        PushGateway pg = PushGateway.builder().address(args[0]).build();
         g.set(42);
         pg.push(pushRegistry, "job");
     }
