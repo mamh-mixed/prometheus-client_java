@@ -3,6 +3,7 @@ package io.prometheus.metrics.exporter.pushgateway;
 import io.prometheus.metrics.config.ExporterPushgatewayProperties;
 import io.prometheus.metrics.config.PrometheusProperties;
 import io.prometheus.metrics.config.PrometheusPropertiesException;
+import io.prometheus.metrics.expositionformats.PrometheusProtobufWriter;
 import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
 import io.prometheus.metrics.model.registry.Collector;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
@@ -200,7 +201,11 @@ public class PushGateway {
             }
         }
         HttpURLConnection connection = connectionFactory.create(url);
-        connection.setRequestProperty("Content-Type", PrometheusTextFormatWriter.CONTENT_TYPE);
+        if (format == Format.PROMETHEUS_TEXT) {
+            connection.setRequestProperty("Content-Type", PrometheusTextFormatWriter.CONTENT_TYPE);
+        } else {
+            connection.setRequestProperty("Content-Type", PrometheusProtobufWriter.CONTENT_TYPE);
+        }
         if (!method.equals("DELETE")) {
             connection.setDoOutput(true);
         }
@@ -213,7 +218,11 @@ public class PushGateway {
         try {
             if (!method.equals("DELETE")) {
                 OutputStream outputStream = connection.getOutputStream();
-                new PrometheusTextFormatWriter(false).write(outputStream, registry.scrape());
+                if (format == Format.PROMETHEUS_TEXT) {
+                    new PrometheusTextFormatWriter(false).write(outputStream, registry.scrape());
+                } else {
+                    new PrometheusProtobufWriter().write(outputStream, registry.scrape());
+                }
                 outputStream.flush();
                 outputStream.close();
             }
