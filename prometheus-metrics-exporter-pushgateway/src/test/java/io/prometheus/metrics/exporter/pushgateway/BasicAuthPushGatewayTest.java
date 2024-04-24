@@ -28,8 +28,10 @@ public class BasicAuthPushGatewayTest {
     public void setUp() {
         registry = new PrometheusRegistry();
         gauge = Gauge.builder().name("g").help("help").build();
-        pushGateway = PushGateway.builder().address("localhost:" + mockServerRule.getPort()).build();
-        pushGateway.setConnectionFactory(new BasicAuthHttpConnectionFactory("testUser", "testPwd"));
+        pushGateway = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .basicAuth("testUser", "testPwd")
+                .build();
     }
 
     @Test

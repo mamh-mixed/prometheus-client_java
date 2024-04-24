@@ -15,6 +15,7 @@ import java.io.OutputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -60,12 +61,14 @@ public class PushGateway {
     // Visible for testing.
     protected final String gatewayBaseURL;
     private final Format format;
+    private final Map<String, String> requestHeaders;
 
     private HttpConnectionFactory connectionFactory = new DefaultHttpConnectionFactory();
 
-    private PushGateway(String gatewayBaseURL, Format format) {
+    private PushGateway(String gatewayBaseURL, Format format, Map<String, String> requestHeaders) {
         this.gatewayBaseURL = gatewayBaseURL;
         this.format = format;
+        this.requestHeaders = Collections.unmodifiableMap(new HashMap<>(requestHeaders));
     }
 
     public void setConnectionFactory(HttpConnectionFactory connectionFactory) {
@@ -201,6 +204,7 @@ public class PushGateway {
             }
         }
         HttpURLConnection connection = connectionFactory.create(url);
+        requestHeaders.forEach(connection::setRequestProperty);
         if (format == Format.PROMETHEUS_TEXT) {
             connection.setRequestProperty("Content-Type", PrometheusTextFormatWriter.CONTENT_TYPE);
         } else {
@@ -282,6 +286,7 @@ public class PushGateway {
         private final PrometheusProperties config;
         private Format format;
         private String address;
+        private final Map<String, String> requestHeaders = new HashMap<>();
 
         private Builder(PrometheusProperties config) {
             this.config = config;
@@ -297,6 +302,13 @@ public class PushGateway {
 
         public Builder address(String address) {
             this.address = address;
+            return this;
+        }
+
+        public Builder basicAuth(String user, String password) {
+            byte[] credentialsBytes = (user + ":" + password).getBytes(StandardCharsets.UTF_8);
+            String encoded = Base64.getEncoder().encodeToString(credentialsBytes);
+            requestHeaders.put("Authorization", String.format("Basic %s", encoded));
             return this;
         }
 
@@ -316,7 +328,7 @@ public class PushGateway {
             }
             try {
                 URI baseUrl = URI.create(new URL("http://" + address + "/metrics/").toString()).normalize();
-                return new PushGateway(baseUrl.toString(), format);
+                return new PushGateway(baseUrl.toString(), format, requestHeaders);
             } catch (MalformedURLException e) {
                 throw new PrometheusPropertiesException(address + ": Invalid address. Expecting <host>:<port>");
             }
