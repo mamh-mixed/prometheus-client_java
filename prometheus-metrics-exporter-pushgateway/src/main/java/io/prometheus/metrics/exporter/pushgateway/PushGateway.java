@@ -6,18 +6,15 @@ import io.prometheus.metrics.config.PrometheusPropertiesException;
 import io.prometheus.metrics.expositionformats.PrometheusProtobufWriter;
 import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
 import io.prometheus.metrics.model.registry.Collector;
+import io.prometheus.metrics.model.registry.MultiCollector;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import io.prometheus.metrics.model.snapshots.MetricSnapshots;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.rmi.registry.Registry;
+import java.util.*;
 
 /**
  * Export metrics via the Prometheus Pushgateway.
@@ -59,150 +56,94 @@ public class PushGateway {
     private static final int MILLISECONDS_PER_SECOND = 1000;
 
     // Visible for testing.
-    protected final String gatewayBaseURL;
+    private final URL url;
     private final Format format;
     private final Map<String, String> requestHeaders;
+    private final PrometheusRegistry registry;
+    private final HttpConnectionFactory connectionFactory;
 
-    private HttpConnectionFactory connectionFactory = new DefaultHttpConnectionFactory();
-
-    private PushGateway(String gatewayBaseURL, Format format, Map<String, String> requestHeaders) {
-        this.gatewayBaseURL = gatewayBaseURL;
+    private PushGateway(PrometheusRegistry registry, Format format, URL url, HttpConnectionFactory connectionFactory, Map<String, String> requestHeaders) {
+        this.registry = registry;
         this.format = format;
+        this.url = url;
         this.requestHeaders = Collections.unmodifiableMap(new HashMap<>(requestHeaders));
-    }
-
-    public void setConnectionFactory(HttpConnectionFactory connectionFactory) {
         this.connectionFactory = connectionFactory;
     }
 
     /**
-     * Pushes all metrics in a registry, replacing all those with the same job and no grouping key.
+     * Push all metrics. All metrics with the same job and grouping key are replaced.
      * <p>
      * This uses the PUT HTTP method.
      */
-    public void push(PrometheusRegistry registry, String job) throws IOException {
-        doRequest(registry, job, null, "PUT");
+    public void push() throws IOException {
+        doRequest(registry, "PUT");
     }
 
     /**
-     * Pushes all metrics in a Collector, replacing all those with the same job and no grouping key.
+     * Push a single metric. All metrics with the same job and grouping key are replaced.
      * <p>
      * This is useful for pushing a single Gauge.
      * <p>
      * This uses the PUT HTTP method.
      */
-    public void push(Collector collector, String job) throws IOException {
+    public void push(Collector collector) throws IOException {
         PrometheusRegistry registry = new PrometheusRegistry();
         registry.register(collector);
-        push(registry, job);
+        doRequest(registry, "PUT");
     }
 
     /**
-     * Pushes all metrics in a registry, replacing all those with the same job and grouping key.
+     * Push a single collector. All metrics with the same job and grouping key are replaced.
      * <p>
      * This uses the PUT HTTP method.
      */
-    public void push(PrometheusRegistry registry, String job, Map<String, String> groupingKey) throws IOException {
-        doRequest(registry, job, groupingKey, "PUT");
-    }
-
-    /**
-     * Pushes all metrics in a Collector, replacing all those with the same job and grouping key.
-     * <p>
-     * This is useful for pushing a single Gauge.
-     * <p>
-     * This uses the PUT HTTP method.
-     */
-    public void push(Collector collector, String job, Map<String, String> groupingKey) throws IOException {
+    public void push(MultiCollector collector) throws IOException {
         PrometheusRegistry registry = new PrometheusRegistry();
         registry.register(collector);
-        push(registry, job, groupingKey);
+        doRequest(registry, "PUT");
     }
 
     /**
-     * Pushes all metrics in a registry, replacing only previously pushed metrics of the same name and job and no grouping key.
+     * Like {@link #push()}, but only metrics with the same name as the newly pushed metrics are replaced.
      * <p>
      * This uses the POST HTTP method.
      */
-    public void pushAdd(PrometheusRegistry registry, String job) throws IOException {
-        doRequest(registry, job, null, "POST");
+    public void pushAdd() throws IOException {
+        doRequest(registry, "POST");
     }
 
     /**
-     * Pushes all metrics in a Collector, replacing only previously pushed metrics of the same name and job and no grouping key.
-     * <p>
-     * This is useful for pushing a single Gauge.
+     * Like {@link #push(Collector)}, but only the specified metric will be replaced.
      * <p>
      * This uses the POST HTTP method.
      */
-    public void pushAdd(Collector collector, String job) throws IOException {
+    public void pushAdd(Collector collector) throws IOException {
         PrometheusRegistry registry = new PrometheusRegistry();
         registry.register(collector);
-        pushAdd(registry, job);
+        doRequest(registry, "POST");
     }
 
     /**
-     * Pushes all metrics in a registry, replacing only previously pushed metrics of the same name, job and grouping key.
+     * Like {@link #push(MultiCollector)}, but only the metrics from the collector will be replaced.
      * <p>
      * This uses the POST HTTP method.
      */
-    public void pushAdd(PrometheusRegistry registry, String job, Map<String, String> groupingKey) throws IOException {
-        doRequest(registry, job, groupingKey, "POST");
-    }
-
-    /**
-     * Pushes all metrics in a Collector, replacing only previously pushed metrics of the same name, job and grouping key.
-     * <p>
-     * This is useful for pushing a single Gauge.
-     * <p>
-     * This uses the POST HTTP method.
-     */
-    public void pushAdd(Collector collector, String job, Map<String, String> groupingKey) throws IOException {
+    public void pushAdd(MultiCollector collector) throws IOException {
         PrometheusRegistry registry = new PrometheusRegistry();
         registry.register(collector);
-        pushAdd(registry, job, groupingKey);
-    }
-
-
-    /**
-     * Deletes metrics from the Pushgateway.
-     * <p>
-     * Deletes metrics with no grouping key and the provided job.
-     * This uses the DELETE HTTP method.
-     */
-    public void delete(String job) throws IOException {
-        doRequest(null, job, null, "DELETE");
+        doRequest(registry, "POST");
     }
 
     /**
      * Deletes metrics from the Pushgateway.
      * <p>
-     * Deletes metrics with the provided job and grouping key.
      * This uses the DELETE HTTP method.
      */
-    public void delete(String job, Map<String, String> groupingKey) throws IOException {
-        doRequest(null, job, groupingKey, "DELETE");
+    public void delete() throws IOException {
+        doRequest(null, "DELETE");
     }
 
-    void doRequest(PrometheusRegistry registry, String job, Map<String, String> groupingKey, String method) throws IOException {
-        String url = gatewayBaseURL;
-        if (job.contains("/")) {
-            url += "job@base64/" + base64url(job);
-        } else {
-            url += "job/" + URLEncoder.encode(job, "UTF-8");
-        }
-
-        if (groupingKey != null) {
-            for (Map.Entry<String, String> entry : groupingKey.entrySet()) {
-                if (entry.getValue().isEmpty()) {
-                    url += "/" + entry.getKey() + "@base64/=";
-                } else if (entry.getValue().contains("/")) {
-                    url += "/" + entry.getKey() + "@base64/" + base64url(entry.getValue());
-                } else {
-                    url += "/" + entry.getKey() + "/" + URLEncoder.encode(entry.getValue(), "UTF-8");
-                }
-            }
-        }
+    void doRequest(PrometheusRegistry registry, String method) throws IOException {
         HttpURLConnection connection = connectionFactory.create(url);
         requestHeaders.forEach(connection::setRequestProperty);
         if (format == Format.PROMETHEUS_TEXT) {
@@ -286,7 +227,11 @@ public class PushGateway {
         private final PrometheusProperties config;
         private Format format;
         private String address;
+        private String job;
         private final Map<String, String> requestHeaders = new HashMap<>();
+        private PrometheusRegistry registry = PrometheusRegistry.defaultRegistry;
+        private HttpConnectionFactory connectionFactory = new DefaultHttpConnectionFactory();
+        private Map<String, String> groupingKey = new TreeMap<>();
 
         private Builder(PrometheusProperties config) {
             this.config = config;
@@ -312,25 +257,93 @@ public class PushGateway {
             return this;
         }
 
-        public PushGateway build() {
-            ExporterPushgatewayProperties properties = config == null ? null : config.getExporterPushgatewayProperties();
+        public Builder connectionFactory(HttpConnectionFactory connectionFactory) {
+            if (connectionFactory == null) {
+                throw new NullPointerException();
+            }
+            this.connectionFactory = connectionFactory;
+            return this;
+        }
+
+        public Builder groupingKey(String name, String value) {
+            groupingKey.put(name, value);
+            return this;
+        }
+
+        public Builder registry(PrometheusRegistry registry) {
+            if (registry == null) {
+                throw new NullPointerException();
+            }
+            this.registry = registry;
+            return this;
+        }
+
+        public Builder job(String job) {
+            if (job == null) {
+                throw new NullPointerException();
+            }
+            this.job = job;
+            return this;
+        }
+
+        private String getAddress(ExporterPushgatewayProperties properties) {
             String address = this.address;
-            if (properties != null) {
-                if (address == null && properties.getAddress() != null) {
+            if (address == null) {
+                if (properties != null && properties.getAddress() != null) {
                     address = properties.getAddress();
+                } else {
+                    address = "localhost:9091";
                 }
             }
-            if (address == null) {
-                address = "localhost:9091";
+            return address;
+        }
+
+        private String getJob(ExporterPushgatewayProperties properties) {
+            String job = this.job;
+            if (job == null) {
+                if (properties != null && properties.getJob() != null) {
+                    job = properties.getJob();
+                } else {
+                    job = DefaultJobLabelDetector.getDefaultJobLabel();
+                }
             }
+            return job;
+        }
+
+        private URL makeUrl(ExporterPushgatewayProperties properties) throws UnsupportedEncodingException, MalformedURLException {
+            String url = "http://" + getAddress(properties) + "/metrics/";
+            String job = getJob(properties);
+            if (job.contains("/")) {
+                url += "job@base64/" + base64url(job);
+            } else {
+                url += "job/" + URLEncoder.encode(job, "UTF-8");
+            }
+            if (groupingKey != null) {
+                for (Map.Entry<String, String> entry : groupingKey.entrySet()) {
+                    if (entry.getValue().isEmpty()) {
+                        url += "/" + entry.getKey() + "@base64/=";
+                    } else if (entry.getValue().contains("/")) {
+                        url += "/" + entry.getKey() + "@base64/" + base64url(entry.getValue());
+                    } else {
+                        url += "/" + entry.getKey() + "/" + URLEncoder.encode(entry.getValue(), "UTF-8");
+                    }
+                }
+            }
+            return URI.create(url).normalize().toURL();
+        }
+
+        public PushGateway build() {
+            ExporterPushgatewayProperties properties = config == null ? null : config.getExporterPushgatewayProperties();
+            Format format = this.format;
             if (format == null) {
                 format = Format.PROMETHEUS_PROTOBUF;
             }
             try {
-                URI baseUrl = URI.create(new URL("http://" + address + "/metrics/").toString()).normalize();
-                return new PushGateway(baseUrl.toString(), format, requestHeaders);
+                return new PushGateway(registry, format, makeUrl(properties), connectionFactory, requestHeaders);
             } catch (MalformedURLException e) {
                 throw new PrometheusPropertiesException(address + ": Invalid address. Expecting <host>:<port>");
+            } catch (UnsupportedEncodingException e) {
+                throw new RuntimeException(e); // cannot happen, UTF-8 is always supported
             }
         }
     }

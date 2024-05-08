@@ -40,7 +40,8 @@ public class PushGatewayIT {
                 .withNetwork(network)
                 .withNetworkAliases("pushgateway")
                 .withLogConsumer(LogConsumer.withPrefix("pushgateway"))
-                .waitingFor(Wait.forHttp("/"));
+                .withCopyFileToContainer(MountableFile.forClasspathResource("/pushgateway-basicauth.yaml"), "/pushgateway/pushgateway-basicauth.yaml")
+                .waitingFor(Wait.forListeningPort());
         sampleAppContainer = new GenericContainer<>("openjdk:17")
                 .withFileSystemBind(sampleAppVolume.getHostPath(), "/app", BindMode.READ_ONLY)
                 .withNetwork(network)
@@ -51,7 +52,6 @@ public class PushGatewayIT {
                 .withNetwork(network)
                 .dependsOn(pushGatewayContainer)
                 .withExposedPorts(9090)
-                .withCopyFileToContainer(MountableFile.forClasspathResource("/prometheus.yaml"), "/etc/prometheus/prometheus.yml")
                 .withLogConsumer(LogConsumer.withPrefix("prometheus"));
     }
 
@@ -66,23 +66,49 @@ public class PushGatewayIT {
     final OkHttpClient client = new OkHttpClient();
 
     @Test
-    public void testPush() throws IOException, InterruptedException {
+    public void testSimple() throws IOException, InterruptedException {
         pushGatewayContainer.start();
         sampleAppContainer
                 .withCommand("java",
                         "-Dio.prometheus.exporter.pushgateway.address=pushgateway:9091",
                         "-jar",
-                        "/app/pushgateway-test-app.jar"
+                        "/app/pushgateway-test-app.jar",
+                        "simple"
                 ).start();
-        prometheusContainer.start();
+        prometheusContainer
+                .withCopyFileToContainer(MountableFile.forClasspathResource("/prometheus.yaml"), "/etc/prometheus/prometheus.yml")
+                        .start();
         awaitTermination(sampleAppContainer, 10, TimeUnit.SECONDS);
-        double value = getValue("my_batch_job_duration_seconds", "job", "my_batch_job");
+        assertMetrics();
+    }
+
+    @Test
+    public void testBasicAuth() throws IOException, InterruptedException {
+        pushGatewayContainer
+                .withCommand("--web.config.file", "pushgateway-basicauth.yaml")
+                .start();
+        sampleAppContainer
+                .withCommand("java",
+                        "-Dio.prometheus.exporter.pushgateway.address=pushgateway:9091",
+                        "-jar",
+                        "/app/pushgateway-test-app.jar",
+                        "basicauth"
+                ).start();
+        prometheusContainer
+                .withCopyFileToContainer(MountableFile.forClasspathResource("/prometheus-basicauth.yaml"), "/etc/prometheus/prometheus.yml")
+                .start();
+        awaitTermination(sampleAppContainer, 10, TimeUnit.SECONDS);
+        assertMetrics();
+    }
+
+    private void assertMetrics() throws IOException, InterruptedException {
+        double value = getValue("my_batch_job_duration_seconds", "job", "pushgateway-test-app");
         Assert.assertEquals(0.5, value, 0.0);
-        value = getValue("file_sizes_bytes_bucket", "job", "my_batch_job", "le", "512");
+        value = getValue("file_sizes_bytes_bucket", "job", "pushgateway-test-app", "le", "512");
         Assert.assertEquals(0.0, value, 0.0);
-        value = getValue("file_sizes_bytes_bucket", "job", "my_batch_job", "le", "1024");
+        value = getValue("file_sizes_bytes_bucket", "job", "pushgateway-test-app", "le", "1024");
         Assert.assertEquals(2.0, value, 0.0);
-        value = getValue("file_sizes_bytes_bucket", "job", "my_batch_job", "le", "+Inf");
+        value = getValue("file_sizes_bytes_bucket", "job", "pushgateway-test-app", "le", "+Inf");
         Assert.assertEquals(3.0, value, 0.0);
     }
 

@@ -12,6 +12,8 @@ import org.mockserver.client.MockServerClient;
 import org.mockserver.junit.MockServerRule;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.net.URL;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -31,16 +33,11 @@ public class PushGatewayTest {
 
     PrometheusRegistry registry;
     Gauge gauge;
-    PushGateway pg;
-    Map groupingKey;
 
     @Before
     public void setUp() {
         registry = new PrometheusRegistry();
-        gauge = (Gauge) Gauge.builder().name("g").help("help").build();
-        pg = PushGateway.builder().address("localhost:" + mockServerRule.getPort()).build();
-        groupingKey = new TreeMap<String, String>();
-        groupingKey.put("l", "v");
+        gauge = Gauge.builder().name("g").help("help").build();
     }
 
     @Test(expected = RuntimeException.class)
@@ -49,12 +46,21 @@ public class PushGatewayTest {
     }
 
     @Test
-    public void testMultipleSlashesAreStrippedFromURL() {
-        final PushGateway pushGateway = PushGateway.builder().address("example.com:1234/context///path//").build();
+    public void testMultipleSlashesAreStrippedFromURL() throws NoSuchFieldException, IllegalAccessException {
+        final PushGateway pushGateway = PushGateway.builder()
+                .address("example.com:1234/context///path//")
+                .job("test")
+                .build();
         Assert.assertEquals(
-                "http://example.com:1234/context/path/metrics/",
-                pushGateway.gatewayBaseURL
+                "http://example.com:1234/context/path/metrics/job/test",
+                getUrl(pushGateway).toString()
         );
+    }
+
+    private URL getUrl(PushGateway pushGateway) throws IllegalAccessException, NoSuchFieldException {
+        Field field = pushGateway.getClass().getDeclaredField("url");
+        field.setAccessible(true);
+        return (URL) field.get(pushGateway);
     }
 
     @Test
@@ -64,7 +70,12 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job/j")
         ).respond(response().withStatusCode(202));
-        pg.push(registry, "j");
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .build();
+        pg.push();
     }
 
     @Test
@@ -74,7 +85,12 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job/j")
         ).respond(response().withStatusCode(200));
-        pg.push(registry, "j");
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .build();
+        pg.push();
     }
 
     @Test
@@ -89,7 +105,12 @@ public class PushGatewayTest {
                 "Response code from http://localhost:"
                         + mockServerRule.getPort()
                         + "/metrics/job/j was 500");
-        pg.push(registry, "j");
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .build();
+        pg.push();
     }
 
     @Test
@@ -99,7 +120,12 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job/j")
         ).respond(response().withStatusCode(202));
-        pg.push(gauge, "j");
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .build();
+        pg.push();
     }
 
     @Test
@@ -109,7 +135,13 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job/j/l/v")
         ).respond(response().withStatusCode(202));
-        pg.push(registry, "j", groupingKey);
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .groupingKey("l", "v")
+                .build();
+        pg.push();
     }
 
     @Test
@@ -119,8 +151,14 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job/j/l/v/l2/v2")
         ).respond(response().withStatusCode(202));
-        groupingKey.put("l2", "v2");
-        pg.push(registry, "j", groupingKey);
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .groupingKey("l", "v")
+                .groupingKey("l2", "v2")
+                .build();
+        pg.push();
     }
 
     @Test
@@ -130,8 +168,14 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job/j/l/v/l2@base64/=")
         ).respond(response().withStatusCode(202));
-        groupingKey.put("l2", "");
-        pg.push(registry, "j", groupingKey);
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .groupingKey("l", "v")
+                .groupingKey("l2", "")
+                .build();
+        pg.push();
     }
 
     @Test
@@ -141,8 +185,14 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job@base64/YS9i/l/v/l2@base64/75-_Lw==")
         ).respond(response().withStatusCode(202));
-        groupingKey.put("l2", "\uF7FF/");
-        pg.push(registry, "a/b", groupingKey);
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("a/b")
+                .groupingKey("l", "v")
+                .groupingKey("l2", "\uF7FF/")
+                .build();
+        pg.push();
     }
 
     @Test
@@ -152,8 +202,13 @@ public class PushGatewayTest {
                         .withMethod("PUT")
                         .withPath("/metrics/job/j/l/v")
         ).respond(response().withStatusCode(202));
-        System.out.println("Pushing to " + pg.gatewayBaseURL);
-        pg.push(gauge, "j", groupingKey);
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .groupingKey("l", "v")
+                .build();
+        pg.push(gauge);
     }
 
     @Test
@@ -163,7 +218,12 @@ public class PushGatewayTest {
                         .withMethod("POST")
                         .withPath("/metrics/job/j")
         ).respond(response().withStatusCode(202));
-        pg.pushAdd(registry, "j");
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .job("j")
+                .build();
+        pg.pushAdd();
     }
 
     @Test
@@ -173,7 +233,11 @@ public class PushGatewayTest {
                         .withMethod("POST")
                         .withPath("/metrics/job/j")
         ).respond(response().withStatusCode(202));
-        pg.pushAdd(gauge, "j");
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .job("j")
+                .build();
+        pg.pushAdd(gauge);
     }
 
     @Test
@@ -183,7 +247,13 @@ public class PushGatewayTest {
                         .withMethod("POST")
                         .withPath("/metrics/job/j/l/v")
         ).respond(response().withStatusCode(202));
-        pg.pushAdd(registry, "j", groupingKey);
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .groupingKey("l", "v")
+                .job("j")
+                .build();
+        pg.pushAdd();
     }
 
     @Test
@@ -193,7 +263,13 @@ public class PushGatewayTest {
                         .withMethod("POST")
                         .withPath("/metrics/job/j/l/v")
         ).respond(response().withStatusCode(202));
-        pg.pushAdd(gauge, "j", groupingKey);
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .registry(registry)
+                .groupingKey("l", "v")
+                .job("j")
+                .build();
+        pg.pushAdd(gauge);
     }
 
     @Test
@@ -203,7 +279,11 @@ public class PushGatewayTest {
                         .withMethod("DELETE")
                         .withPath("/metrics/job/j")
         ).respond(response().withStatusCode(202));
-        pg.delete("j");
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .job("j")
+                .build();
+        pg.delete();
     }
 
     @Test
@@ -213,12 +293,17 @@ public class PushGatewayTest {
                         .withMethod("DELETE")
                         .withPath("/metrics/job/j/l/v")
         ).respond(response().withStatusCode(202));
-        pg.delete("j", groupingKey);
+        PushGateway pg = PushGateway.builder()
+                .address("localhost:" + mockServerRule.getPort())
+                .job("j")
+                .groupingKey("l", "v")
+                .build();
+        pg.delete();
     }
 
     @Test
     public void testInstanceIPGroupingKey() throws IOException {
-        groupingKey = PushGateway.instanceIPGroupingKey();
+        Map<String, String> groupingKey = PushGateway.instanceIPGroupingKey();
         Assert.assertTrue(!groupingKey.get("instance").equals(""));
     }
 }

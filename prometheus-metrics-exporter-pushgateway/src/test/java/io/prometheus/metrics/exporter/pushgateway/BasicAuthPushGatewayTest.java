@@ -31,6 +31,8 @@ public class BasicAuthPushGatewayTest {
         pushGateway = PushGateway.builder()
                 .address("localhost:" + mockServerRule.getPort())
                 .basicAuth("testUser", "testPwd")
+                .registry(registry)
+                .job("j")
                 .build();
     }
 
@@ -42,6 +44,6 @@ public class BasicAuthPushGatewayTest {
                         .withHeader("Authorization", "Basic dGVzdFVzZXI6dGVzdFB3ZA==")
                         .withPath("/metrics/job/j")
         ).respond(response().withStatusCode(202));
-        pushGateway.push(registry, "j");
+        pushGateway.push();
     }
 }
